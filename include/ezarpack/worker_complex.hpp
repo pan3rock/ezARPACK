@@ -10,17 +10,32 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  ******************************************************************************/
+/// @file ezarpack/worker_complex.hpp
+/// @brief Specialization of `arpack_worker` class for the case of general
+/// complex eigenproblems.
 #pragma once
 
 namespace ezarpack {
 
-/************************************************
- * ARPACK worker object: Case of complex matrix A
- ************************************************/
+/// @brief Main worker class for the general complex eigenproblems.
+///
+/// This specialization of `arpack_worker` calls ARPACK-NG functions `znaupd()`
+/// and `zneupd()` to compute approximations to a few eigenpairs of a complex
+/// linear operator @f$ \hat O @f$ with respect to a semi-inner product defined
+/// by a Hermitian positive semi-definite matrix @f$ \hat B @f$.
+///
+/// @note If both @f$ \hat O @f$ and @f$ \hat B@f$ are real and symmetric
+/// @ref arpack_worker<Symmetric, Backend>, then should be used instead.
+///
+/// @tparam Backend Tag type specifying what *storage backend* (matrix/vector
+/// algebra library) must be used by `arpack_worker`. The storage backend
+/// determines types of internally stored data arrays and input/output view
+/// objects exposed by methods of the class.
 template<typename Backend> class arpack_worker<Complex, Backend> {
 
   using storage = storage_traits<Backend>;
 
+  // Shorthands for some storage-specific types
   using real_vector_t = typename storage::real_vector_type;
   using complex_vector_t = typename storage::complex_vector_type;
   using complex_matrix_t = typename storage::complex_matrix_type;
@@ -51,44 +66,66 @@ template<typename Backend> class arpack_worker<Complex, Backend> {
   bool Bx_available_ = false; // Has B*x already been computed?
 
 public:
-  using vector_view_t = complex_vector_view_t;
+
+  /// Storage-specific view type to expose complex input vectors
+  /// @f$ \mathbf{x} @f$. An argument of this type is passed as input to
+  /// callable objects representing linear operators @f$ \hat O @f$ and
+  /// @f$ \hat B @f$.
   using vector_const_view_t = complex_vector_const_view_t;
 
+  /// Storage-specific view type to expose complex output vectors
+  /// @f$ \mathbf{y} @f$. An argument of this type receives output from
+  /// callable objects representing linear operators @f$ \hat O @f$ and
+  /// @f$ \hat B @f$.
+  using vector_view_t = complex_vector_view_t;
+
+  /// Input parameters of the Implicitly Restarted Arnoldi Method (IRAM).
   struct params_t {
-    // Number of eigenvalues (Ritz values) to compute
+
+    /// Number of eigenvalues (Ritz values) to compute.
     unsigned int n_eigenvalues;
-    // Which of the Ritz values to compute
+
+    /// Which of the eigenvalues to compute.
     enum {
-      LargestMagnitude,
-      SmallestMagnitude,
-      LargestReal,  // Algebraically largest real part
-      SmallestReal, // Algebraically smallest real part
-      LargestImag,  // Algebraically largest imaginary part
-      SmallestImag  // Algebraically smallest imaginary part
+      LargestMagnitude,   /**< Largest eigenvalues in magnitude. */
+      SmallestMagnitude,  /**< Smallest eigenvalues in magnitude. */
+      LargestReal,        /**< Eigenvalues of largest real part. */
+      SmallestReal,       /**< Eigenvalues of smallest real part. */
+      LargestImag,        /**< Eigenvalues of largest imaginary part. */
+      SmallestImag        /**< Eigenvalues of smallest imaginary part. */
     } eigenvalues_select;
 
-    // Expert option: number of Lanczos vectors to be generated
-    // default: min(2*n_eigenvalues+1, N)
+    /// Number of Arnoldi vectors to be generated.
+    /// `-1` stands for the default value `min(2*n_eigenvalues + 2, N)`,
+    /// where `N` is the dimension of the problem.
     int ncv = -1;
 
-    // Compute Ritz/Schur vectors?
-    // None: do not compute anything;
-    // Ritz: compute eigenvectors of A;
-    // Schur: compute orthogonal basis vectors of
-    // the n_eigenvalues-dimensional subspace.
-    enum { None, Ritz, Schur } compute_vectors;
+    /// Compute Ritz or Schur vectors?
+    enum {
+      None, /**< Do not compute neither Ritz nor Schur vectors. */
+      Ritz, /**< Compute Ritz vectors (eigenvectors). */
+      Schur /**< Compute Schur vectors (orthogonal basis vectors of
+                 the @ref n_eigenvalues -dimensional subspace). */
+    } compute_vectors;
 
-    // Use a randomly generated initial residual vector
+    /// Use a randomly generated initial residual vector?
     bool random_residual_vector = true;
 
-    // Eigenvalue shift
+    /// Eigenvalue shift @f$ \sigma @f$ used if a spectral transformation is
+    /// employed.
     dcomplex sigma = 0;
 
-    // Relative tolerance for Ritz value convergence
+    /// Relative tolerance for Ritz value convergence. The default setting is
+    /// machine precision.
     double tolerance = 0;
-    // Maximum number of Arnoldi update iterations
+
+    /// Maximum number of IRAM iterations allowed.
     unsigned int max_iter = INT_MAX;
 
+    /// Constructs an IRAM parameter object with given
+    /// @ref n_eigenvalues, @ref eigenvalues_select and
+    /// @ref compute_vectors.
+    /// The rest of the parameters are set to their defaults.
     params_t(unsigned int n_eigenvalues,
              decltype(eigenvalues_select) ev_select,
              decltype(compute_vectors) compute_evec)
@@ -97,6 +134,9 @@ public:
           compute_vectors(compute_evec) {}
   };
 
+  /// Constructs a worker object and allocates internal data buffers to be
+  /// used by ARPACK-NG.
+  /// @param N Dimension of the eigenproblem.
   arpack_worker(unsigned int N)
       : N(N),
         resid(storage::make_complex_vector(N)),
@@ -119,6 +159,8 @@ public:
 
   arpack_worker(arpack_worker const&) = delete;
   arpack_worker(arpack_worker&&) noexcept = delete;
+
+private:
 
   // Prepare values of input parameters
   void prepare(params_t const& params) {
@@ -169,6 +211,10 @@ public:
           "Maximum number of Arnoldi update iterations must be positive");
   }
 
+public:
+
+  /// If this no-op functor is used to provide shifts for implicit restart,
+  /// then the default ARPACK-NG shift strategy will be employed.
   struct trivial_shifts_f {
     void operator()(complex_vector_view_t shifts_re,
                     complex_vector_view_t shifts_im) {}

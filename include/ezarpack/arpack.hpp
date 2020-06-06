@@ -201,7 +201,8 @@ extern "C" {
 /// @name External ARPACK-NG subroutines *eupd()
 ///
 /// These subroutines return the converged approximations to eigenvalues
-/// of `A*z = lambda*B*z` and (optionally):
+/// of @f$ \hat O \mathbf{z} = \lambda \hat B\mathbf{z} @f$
+/// and (optionally):
 ///   -# the corresponding approximate eigenvectors;
 ///   -# an orthonormal basis for the associated approximate invariant subspace;
 ///   -# both.

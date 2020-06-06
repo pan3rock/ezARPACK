@@ -36,7 +36,6 @@ enum operator_kind {
   Complex       /**< General complex matrix. */
 };
 
-/// @class arpack_worker
 /// @brief Main class template of ezARPACK's API.
 ///
 /// Instances of this class are used to solve all kinds of eigenproblems
@@ -51,6 +50,7 @@ template<operator_kind OpKind, typename Backend> class arpack_worker;
 #ifndef DOXYGEN_IGNORE
 #define ARPACK_WORKER_ERROR(MSG) std::runtime_error("arpack_worker: " MSG)
 #endif
+
 
 /// @brief Exception: Maximum number of Implicitly restarted Arnoldi iterations
 /// has been reached.

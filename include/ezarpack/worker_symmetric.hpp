@@ -10,17 +10,41 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  ******************************************************************************/
+/// @file ezarpack/worker_symmetric.hpp
+/// @brief Specialization of `arpack_worker` class for the case of real
+/// symmetric eigenproblems.
 #pragma once
 
 namespace ezarpack {
 
-/*******************************************************
- * ARPACK worker object: Case of real symmetric matrix A
- *******************************************************/
+/// @headerfile worker_symmetric.hpp "ezarpack/worker_symmetric.hpp"
+/// @brief Main worker class for the real symmetric eigenproblems.
+///
+/// This specialization of `arpack_worker` calls ARPACK-NG functions `dsaupd()`
+/// and `dseupd()` to compute approximations to a few eigenpairs of a linear
+/// operator @f$ \hat O @f$ that is real and symmetric with respect to
+/// a real positive semi-definite symmetric matrix @f$ \hat B @f$, i.e.
+/// @f[
+///   \langle \mathbf{x},\hat O \mathbf{y} \rangle =
+///   \langle \hat O \mathbf{x}, \mathbf{y} \rangle
+/// @f]
+/// for all vectors @f$ \mathbf{x} @f$, @f$ \mathbf{y} @f$ and with the scalar
+/// product defined as
+/// @f[
+///   \langle \mathbf{x}, \mathbf{y} \rangle = \mathbf{x}^T \hat B \mathbf{y}.
+/// @f]
+/// A variant of the Lanczos algorithm is internally used instead of the
+/// Arnoldi iteration for this class of problems.
+///
+/// @tparam Backend Tag type specifying what *storage backend* (matrix/vector
+/// algebra library) must be used by `arpack_worker`. The storage backend
+/// determines types of internally stored data arrays and input/output view
+/// objects exposed by methods of the class.
 template<typename Backend> class arpack_worker<Symmetric, Backend> {
 
   using storage = storage_traits<Backend>;
 
+  // Shorthands for some storage-specific types
   using real_vector_t = typename storage::real_vector_type;
   using real_matrix_t = typename storage::real_matrix_type;
   using int_vector_t = typename storage::int_vector_type;
@@ -48,39 +72,63 @@ template<typename Backend> class arpack_worker<Symmetric, Backend> {
   bool Bx_available_ = false; // Has B*x already been computed?
 
 public:
-  using vector_view_t = real_vector_view_t;
+
+  /// Storage-specific view type to expose real input vectors
+  /// @f$ \mathbf{x} @f$. An argument of this type is passed as input to
+  /// callable objects representing linear operators @f$ \hat O @f$ and
+  /// @f$ \hat B @f$.
   using vector_const_view_t = real_vector_const_view_t;
 
+  /// Storage-specific view type to expose real output vectors
+  /// @f$ \mathbf{y} @f$. An argument of this type receives output from
+  /// callable objects representing linear operators @f$ \hat O @f$ and
+  /// @f$ \hat B @f$.
+  using vector_view_t = real_vector_view_t;
+
+  /// Input parameters of the Implicitly Restarted Lanczos Method (IRLM).
   struct params_t {
-    // Number of eigenvalues (Ritz values) to compute
+
+    /// Number of eigenvalues (Ritz values) to compute.
     unsigned int n_eigenvalues;
-    // Which of the Ritz values to compute
+
+    /// Which of the eigenvalues to compute.
     enum {
-      Largest,
-      Smallest,
-      LargestMagnitude,
-      SmallestMagnitude,
-      BothEnds
+      Largest,           /**< Largest (algebraic) eigenvalues. */
+      Smallest,          /**< Smallest (algebraic) eigenvalues. */
+      LargestMagnitude,  /**< Largest eigenvalues in magnitude. */
+      SmallestMagnitude, /**< Smallest eigenvalues in magnitude. */
+      BothEnds           /**< Eigenvalues at both ends of the
+                              spectrum. If @ref n_eigenvalues is odd,
+                              compute one more from the high end
+                              than from the low end. */
     } eigenvalues_select;
 
-    // Expert option: number of Lanczos vectors to be generated
-    // default: min(2*n_eigenvalues, N)
+    /// Number of Lanczos vectors to be generated.
+    /// `-1` stands for the default value `min(2*n_eigenvalues + 2, N)`,
+    /// where `N` is the dimension of the problem.
     int ncv = -1;
 
-    // Compute Ritz vectors?
+    /// Compute Ritz vectors in addition to the eigenvalues?
     bool compute_eigenvectors;
 
-    // Use a randomly generated initial residual vector
+    /// Use a randomly generated initial residual vector?
     bool random_residual_vector = true;
 
-    // Eigenvalue shift
+    /// Eigenvalue shift @f$ \sigma @f$ used if a spectral transformation is
+    /// employed.
     double sigma = 0;
 
-    // Relative tolerance for Ritz value convergence
+    /// Relative tolerance for Ritz value convergence. The default setting is
+    /// machine precision.
     double tolerance = 0;
-    // Maximum number of Arnoldi update iterations
+
+    /// Maximum number of IRLM iterations allowed.
     unsigned int max_iter = INT_MAX;
 
+    /// Constructs an IRLM parameter object with given
+    /// @ref n_eigenvalues, @ref eigenvalues_select and
+    /// @ref compute_eigenvectors.
+    /// The rest of the parameters are set to their defaults.
     params_t(unsigned int n_eigenvalues,
              decltype(eigenvalues_select) ev_select,
              bool compute_eigenvectors)
@@ -89,6 +137,9 @@ public:
           compute_eigenvectors(compute_eigenvectors) {}
   };
 
+  /// Constructs a worker object and allocates internal data buffers to be
+  /// used by ARPACK-NG.
+  /// @param N Dimension of the eigenproblem.
   arpack_worker(unsigned int N)
       : N(N),
         resid(storage::make_real_vector(N)),
@@ -109,6 +160,8 @@ public:
 
   arpack_worker(arpack_worker const&) = delete;
   arpack_worker(arpack_worker&&) noexcept = delete;
+
+private:
 
   // Prepare values of input parameters
   void prepare(params_t const& params) {
@@ -154,6 +207,10 @@ public:
           "Maximum number of Arnoldi update iterations must be positive");
   }
 
+public:
+
+  /// If this no-op functor is used to provide shifts for implicit restart,
+  /// then the default ARPACK-NG shift strategy will be employed.
   struct trivial_shifts_f {
     void operator()(real_vector_view_t shifts) {}
   };
